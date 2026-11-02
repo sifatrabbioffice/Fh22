@@ -25,6 +25,9 @@ jobs:
 
       - name: Generate Custom CMakeLists.txt for iOS Target
         run: |
+          echo "=== Listing Repository Files for Debugging ==="
+          find . -maxdepth 3 -not -path '*/.*'
+          
           cat << 'EOF' > CMakeLists.txt
           cmake_minimum_required(VERSION 3.20)
           project(FH2_Recompiled LANGUAGES C CXX OBJC OBJCXX)
@@ -32,26 +35,22 @@ jobs:
           set(CMAKE_CXX_STANDARD 17)
           set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-          # Scan only the src directory or specific folders to avoid CMake test junk
-          file(GLOB_RECURSE SOURCES 
-              "src/*.cpp" "src/*.cc" "src/*.c" "src/*.m" "src/*.mm"
-              "source/*.cpp" "source/*.cc" "source/*.c" "source/*.m" "source/*.mm"
+          # Find all source files recursively, filtering out build directories
+          file(GLOB_RECURSE ALL_SOURCES 
+              "*.cpp" "*.cc" "*.c" "*.m" "*.mm"
           )
 
-          # Fallback if src/ doesn't exist: search all except build and CMakeFiles
-          if(NOT SOURCES)
-              file(GLOB_RECURSE ALL_FILES "*.cpp" "*.cc" "*.c")
-              foreach(FILE ${ALL_FILES})
-                  if(NOT FILE MATCHES "build" AND NOT FILE MATCHES "CMakeFiles")
-                      list(APPEND SOURCES ${FILE})
-                  endif()
-              endforeach()
-          endif()
+          foreach(FILE ${ALL_SOURCES})
+              # Exclude build, CMakeFiles, or hidden folders
+              if(NOT FILE MATCHES "/build/" AND NOT FILE MATCHES "/CMakeFiles/" AND NOT FILE MATCHES "/\\.")
+                  list(APPEND SOURCES ${FILE})
+              endif()
+          endforeach()
 
-          message(STATUS "Cleaned Source Files: ${SOURCES}")
+          message(STATUS "Filtered Sources: ${SOURCES}")
 
           if(NOT SOURCES)
-              message(FATAL_ERROR "No valid source files found!")
+              message(FATAL_ERROR "No valid source files found in the repository!")
           endif()
 
           add_executable(FH2App ${SOURCES})
