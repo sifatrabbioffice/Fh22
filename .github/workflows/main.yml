@@ -1,0 +1,68 @@
+name: Build FH2 iOS Recompiled
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-14 # Apple Silicon M1/M2 macOS Sonoma রানার (Metal এবং iOS ডেভেলপমেন্টের জন্য আদর্শ)
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive # সাবমোলিউড বা ডিপেনডেন্সি থাকলে তা সহ ক্লোন করবে
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.0' # iOS 17 এবং Metal বিল্ড সাপোর্টেড এক্সকোড ভার্সন
+
+      - name: Verify Environment & Tools
+        run: |
+          clang --version
+          xcodebuild -version
+          cmake --version
+
+      - name: Configure CMake / Build Setup
+        run: |
+          mkdir -p build
+          cd build
+          # আপনার প্রজেক্টের রিকম্পাইল্ড সোর্স এবং মেটাল ব্রিজ অনুযায়ী CMAKE কনফিগারেশন
+          # যদি জেনারেটর এক্সকোড প্রজেক্ট হয়: -G Xcode
+          cmake -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 ..
+
+      - name: Compile and Build iOS App
+        run: |
+          cd build
+          # রিকম্পাইল্ড কোড ও C++ ব্রিজ আর্ম৬৪ আইওএস আর্কিটেকচারের জন্য কম্পাইল করা
+          cmake --build . --config Release
+
+      - name: Package Unsigned .ipa
+        run: |
+          # বিল্ড হওয়া .app ফাইলটিকে .ipa ফরম্যাটে রূপান্তর করার স্ট্রাকচার
+          mkdir -p Payload
+          # লক্ষ্য করুন: প্রজেক্টের বিল্ড আউটপুট অনুযায়ী অ্যাপের নাম পরিবর্তন হতে পারে
+          if [ -d "build/Release-iphoneos/*.app" ]; then
+            cp -r build/Release-iphoneos/*.app Payload/
+          elif [ -d "build/*.app" ]; then
+            cp -r build/*.app Payload/
+          else
+            # ডিফল্ট ফলব্যাক স্ট্রাকচার
+            echo "Searching for built app bundle..."
+            find build -name "*.app" -exec cp -r {} Payload/ \;
+          fi
+          
+          zip -r FH2_Recompiled_iOS.ipa Payload
+          rm -rf Payload
+
+      - name: Upload Artifacts (.ipa)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FH2-iOS-Unsigned-IPA
+          path: FH2_Recompiled_iOS.ipa
+          retention-days: 7
