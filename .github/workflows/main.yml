@@ -9,56 +9,85 @@ on:
 
 jobs:
   build-ios:
-    runs-on: macos-14 # Apple Silicon M1/M2 macOS Sonoma রানার (Metal এবং iOS ডেভেলপমেন্টের জন্য আদর্শ)
-    
+    runs-on: macos-14 # Apple Silicon M1/M2 macOS Runner
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive # সাবমোলিউড বা ডিপেনডেন্সি থাকলে তা সহ ক্লোন করবে
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '15.0' # iOS 17 এবং Metal বিল্ড সাপোর্টেড এক্সকোড ভার্সন
+          xcode-version: '15.0'
 
-      - name: Verify Environment & Tools
+      - name: Generate Custom CMakeLists.txt for iOS Target
         run: |
-          clang --version
-          xcodebuild -version
-          cmake --version
+          cat << 'EOF' > CMakeLists.txt
+          cmake_minimum_required(VERSION 3.20)
+          project(FH2_Recompiled LANGUAGES C CXX OBJC OBJCXX)
 
-      - name: Configure CMake / Build Setup
-        run: |
-          mkdir -p build
-          cd build
-          # আপনার প্রজেক্টের রিকম্পাইল্ড সোর্স এবং মেটাল ব্রিজ অনুযায়ী CMAKE কনফিগারেশন
-          # যদি জেনারেটর এক্সকোড প্রজেক্ট হয়: -G Xcode
-          cmake -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 ..
+          set(CMAKE_CXX_STANDARD 17)
+          set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-      - name: Compile and Build iOS App
+          # Find all C++ source files in src directory
+          file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.c" "src/*.cc" "src/*.hpp" "src/*.h")
+
+          add_executable(FH2App ${SOURCES})
+
+          # Link necessary iOS Frameworks (Metal, Foundation, UIKit)
+          target_link_libraries(FH2App PRIVATE
+              "-framework Foundation"
+              "-framework UIKit"
+              "-framework Metal"
+              "-framework MetalKit"
+              "-framework QuartzCore"
+              "-framework AudioToolbox"
+          )
+
+          set_target_properties(FH2App PROPERTIES
+              MACOSX_BUNDLE TRUE
+              MACOSX_BUNDLE_GUI_IDENTIFIER "com.recompiled.fh2"
+              MACOSX_BUNDLE_BUNDLE_NAME "FH2 Recompiled"
+          )
+          EOF
+          
+          # Check created CMakeLists.txt
+          cat CMakeLists.txt
+
+      - name: Configure CMake for iOS
         run: |
-          cd build
-          # রিকম্পাইল্ড কোড ও C++ ব্রিজ আর্ম৬৪ আইওএস আর্কিটেকচারের জন্য কম্পাইল করা
-          cmake --build . --config Release
+          cmake -B build -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+            -DCMAKE_OSX_ARCHITECTURES="arm64"
+
+      - name: Build Xcode Project
+        run: |
+          xcodebuild -project build/FH2_Recompiled.xcodeproj \
+            -scheme FH2App \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            BUILD_DIR=build/bin
 
       - name: Package Unsigned .ipa
         run: |
-          # বিল্ড হওয়া .app ফাইলটিকে .ipa ফরম্যাটে রূপান্তর করার স্ট্রাকচার
           mkdir -p Payload
-          # লক্ষ্য করুন: প্রজেক্টের বিল্ড আউটপুট অনুযায়ী অ্যাপের নাম পরিবর্তন হতে পারে
-          if [ -d "build/Release-iphoneos/*.app" ]; then
-            cp -r build/Release-iphoneos/*.app Payload/
-          elif [ -d "build/*.app" ]; then
-            cp -r build/*.app Payload/
+          APP_PATH=$(find build/bin -name "*.app" | head -n 1)
+          if [ -n "$APP_PATH" ]; then
+            cp -r "$APP_PATH" Payload/
+            zip -r FH2_Recompiled_iOS.ipa Payload
+            rm -rf Payload
+            echo "Successfully created FH2_Recompiled_iOS.ipa"
           else
-            # ডিফল্ট ফলব্যাক স্ট্রাকচার
-            echo "Searching for built app bundle..."
-            find build -name "*.app" -exec cp -r {} Payload/ \;
+            echo "Error: .app bundle not found!"
+            exit 1
           fi
-          
-          zip -r FH2_Recompiled_iOS.ipa Payload
-          rm -rf Payload
 
       - name: Upload Artifacts (.ipa)
         uses: actions/upload-artifact@v4
