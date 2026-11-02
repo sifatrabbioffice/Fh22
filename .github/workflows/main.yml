@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-ios:
-    runs-on: macos-14 # Apple Silicon M1/M2 macOS Runner
+    runs-on: macos-14
 
     steps:
       - name: Checkout Repository
@@ -23,44 +23,16 @@ jobs:
         with:
           xcode-version: '15.0'
 
-      - name: Prepare Sources and Generate CMakeLists.txt
+      - name: Setup Python & SDK Dependencies
         run: |
-          echo "=== Inspecting Repository Directory ==="
-          ls -la
-          
-          # যদি রিকম্পাইল্ড প্রজেক্টে কোনো সোর্স ফাইল না থাকে বা সাবফোল্ডারে থাকে, 
-          # তবে একটি মিনিমাল iOS/Metal এন্ট্রি পয়েন্ট (main.cpp) তৈরি করে নেওয়া যাতে বিল্ড ফেইল না করে।
-          if [ ! -f "src/main.cpp" ] && [ ! -f "main.cpp" ]; then
-            echo "Creating a fallback iOS entry point..."
-            mkdir -p src
-            cat << 'CPP' > src/main.cpp
-            #import <UIKit/UIKit.h>
-            #import <MetalKit/MetalKit.h>
-
-            @interface AppDelegate : UIResponder <UIApplicationDelegate>
-            @property (strong, nonatomic) UIWindow *window;
-            @end
-
-            @implementation AppDelegate
-            - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-                self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
-                UIViewController *vc = [[UIViewController alloc] init];
-                vc.view.backgroundColor = [UIColor blackColor];
-                self.window.rootViewController = vc;
-                [self.window makeKeyAndVisible];
-                return YES;
-            }
-            @end
-
-            int main(int argc, char * argv[]) {
-                @autoreleasepool {
-                    return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
-                }
-            }
-CPP
+          python3 --version
+          # প্রজেক্টের থার্ড-পার্টি টুলস ও SDK ফেচ করার কমান্ড
+          if [ -f "tools/fetch_thirdparty.py" ]; then
+            python3 tools/fetch_thirdparty.py || true
           fi
 
-          # ডাইনামিক CMakeLists.txt তৈরি যা CMake টেস্ট ও বিল্ড ফোল্ডার সম্পূর্ণ ইগ্নোর করবে
+      - name: Generate Custom CMakeLists.txt and Structure for iOS
+        run: |
           cat << 'EOF' > CMakeLists.txt
           cmake_minimum_required(VERSION 3.20)
           project(FH2_Recompiled LANGUAGES C CXX OBJC OBJCXX)
@@ -68,23 +40,33 @@ CPP
           set(CMAKE_CXX_STANDARD 17)
           set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-          # শুধুমাত্র src/ বা নির্দিষ্ট এক্সটেনশন স্ক্যান করা এবং build/CMakeFiles কড়াভাবে বাদ দেওয়া
-          file(GLOB_RECURSE RAW_SOURCES 
-              "src/*.cpp" "src/*.cc" "src/*.c" "src/*.m" "src/*.mm"
-              "*.cpp" "*.cc" "*.c" "*.m" "*.mm"
-          )
+          # জেনারেটেড কোড ফোল্ডার এবং সোর্স ফাইলগুলোর সঠিক পাথ সিকিউর করা
+          set(SOURCES "")
+          
+          if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/app/generated")
+              file(GLOB_RECURSE GEN_SRCS "app/generated/*.cpp" "app/generated/*.cc" "app/generated/*.c")
+              list(APPEND SOURCES ${GEN_SRCS})
+          endif()
 
-          foreach(FILE ${RAW_SOURCES})
-              if(NOT FILE MATCHES "/build/" AND NOT FILE MATCHES "/CMakeFiles/" AND NOT FILE MATCHES "CMakeCompilerId")
-                  list(APPEND SOURCES ${FILE})
-              endif()
-          endforeach()
+          if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src")
+              file(GLOB_RECURSE SRC_SRCS "src/*.cpp" "src/*.cc" "src/*.c" "src/*.m" "src/*.mm")
+              list(APPEND SOURCES ${SRC_SRCS})
+          endif()
 
-          list(REMOVE_DUPLICATES SOURCES)
-          message(STATUS "Final Cleaned Sources: ${SOURCES}")
+          # যদি কোনো কারণে ফোল্ডার খালি থাকে তবে ফলব্যাক সেফটি
+          if(NOT SOURCES)
+              file(GLOB_RECURSE ALL_FILES "*.cpp" "*.cc" "*.c")
+              foreach(FILE ${ALL_FILES})
+                  if(NOT FILE MATCHES "/build/" AND NOT FILE MATCHES "/CMakeFiles/")
+                      list(APPEND SOURCES ${FILE})
+                  endif()
+              endforeach()
+          endif()
+
+          message(STATUS "Final Loaded Sources Count: ${SOURCES}")
 
           if(NOT SOURCES)
-              message(FATAL_ERROR "No valid source files found after filtering!")
+              message(FATAL_ERROR "No source files available for compilation!")
           endif()
 
           add_executable(FH2App ${SOURCES})
@@ -104,7 +86,7 @@ CPP
               MACOSX_BUNDLE_BUNDLE_NAME "FH2 Recompiled"
           )
           EOF
-
+          
           cat CMakeLists.txt
 
       - name: Configure CMake for iOS
