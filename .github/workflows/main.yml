@@ -25,81 +25,48 @@ jobs:
 
       - name: Generate Custom CMakeLists.txt and Fallback Source
         run: |
-          # যদি রিপোজিটরিতে কোনো সোর্স ফাইল না থাকে, তবে একটি সেফ ফলব্যাক আইওএস এন্ট্রি পয়েন্ট তৈরি করবে
           mkdir -p src
           FOUND_FILES=$(find . -name "*.cpp" -o -name "*.cc" -o -name "*.c" -o -name "*.m" -o -name "*.mm" | grep -v "/build/" | grep -v "/CMakeFiles/" || true)
           
           if [ -z "$FOUND_FILES" ]; then
-            echo "No source files detected. Creating a safe fallback iOS entry point..."
-            cat << 'OBJC' > src/main.mm
-            #import <UIKit/UIKit.h>
-            #import <MetalKit/MetalKit.h>
-
-            @interface AppDelegate : UIResponder <UIApplicationDelegate>
-            @property (strong, nonatomic) UIWindow *window;
-            @end
-
-            @implementation AppDelegate
-            - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-                self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
-                UIViewController *vc = [[UIViewController alloc] init];
-                vc.view.backgroundColor = [UIColor blackColor];
-                self.window.rootViewController = vc;
-                [self.window makeKeyAndVisible];
-                return YES;
-            }
-            @end
-
-            int main(int argc, char * argv[]) {
-                @autoreleasepool {
-                    return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
-                }
-            }
-            OBJC
+            echo "No source files detected. Creating fallback iOS entry point..."
+            echo '#import <UIKit/UIKit.h>' > src/main.mm
+            echo '#import <MetalKit/MetalKit.h>' >> src/main.mm
+            echo '@interface AppDelegate : UIResponder <UIApplicationDelegate>' >> src/main.mm
+            echo '@property (strong, nonatomic) UIWindow *window;' >> src/main.mm
+            echo '@end' >> src/main.mm
+            echo '@implementation AppDelegate' >> src/main.mm
+            echo '- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {' >> src/main.mm
+            echo '    self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];' >> src/main.mm
+            echo '    UIViewController *vc = [[UIViewController alloc] init];' >> src/main.mm
+            echo '    vc.view.backgroundColor = [UIColor blackColor];' >> src/main.mm
+            echo '    self.window.rootViewController = vc;' >> src/main.mm
+            echo '    [self.window makeKeyAndVisible];' >> src/main.mm
+            echo '    return YES;' >> src/main.mm
+            echo '}' >> src/main.mm
+            echo '@end' >> src/main.mm
+            echo 'int main(int argc, char * argv[]) {' >> src/main.mm
+            echo '    @autoreleasepool {' >> src/main.mm
+            echo '        return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));' >> src/main.mm
+            echo '    }' >> src/main.mm
+            echo '}' >> src/main.mm
           fi
 
-          cat << 'EOF' > CMakeLists.txt
-          cmake_minimum_required(VERSION 3.20)
-          project(FH2_Recompiled LANGUAGES C CXX OBJC OBJCXX)
-
-          set(CMAKE_CXX_STANDARD 17)
-          set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-          # Recursively find all source files excluding build and CMakeFiles
-          file(GLOB_RECURSE ALL_FILES 
-              "*.cpp" "*.cc" "*.c" "*.m" "*.mm"
-          )
-
-          set(SOURCES "")
-          foreach(FILE ${ALL_FILES})
-              if(NOT FILE MATCHES "/build/" AND NOT FILE MATCHES "/CMakeFiles/" AND NOT FILE MATCHES "/\\.")
-                  list(APPEND SOURCES ${FILE})
-              endif()
-          endforeach()
-
-          message(STATUS "Final Loaded Sources Count: ${SOURCES}")
-
-          if(NOT SOURCES)
-              message(FATAL_ERROR "No source files available for compilation!")
-          endif()
-
-          add_executable(FH2App ${SOURCES})
-
-          target_link_libraries(FH2App PRIVATE
-              "-framework Foundation"
-              "-framework UIKit"
-              "-framework Metal"
-              "-framework MetalKit"
-              "-framework QuartzCore"
-              "-framework AudioToolbox"
-          )
-
-          set_target_properties(FH2App PROPERTIES
-              MACOSX_BUNDLE TRUE
-              MACOSX_BUNDLE_GUI_IDENTIFIER "com.recompiled.fh2"
-              MACOSX_BUNDLE_BUNDLE_NAME "FH2 Recompiled"
-          )
-          EOF
+          echo "cmake_minimum_required(VERSION 3.20)" > CMakeLists.txt
+          echo "project(FH2_Recompiled LANGUAGES C CXX OBJC OBJCXX)" >> CMakeLists.txt
+          echo "set(CMAKE_CXX_STANDARD 17)" >> CMakeLists.txt
+          echo "set(CMAKE_CXX_STANDARD_REQUIRED ON)" >> CMakeLists.txt
+          echo "file(GLOB_RECURSE ALL_FILES \"*.cpp\" \"*.cc\" \"*.c\" \"*.m\" \"*.mm\")" >> CMakeLists.txt
+          echo "set(SOURCES \"\")" >> CMakeLists.txt
+          echo "foreach(FILE \${ALL_FILES})" >> CMakeLists.txt
+          echo "    if(NOT FILE MATCHES \"/build/\" AND NOT FILE MATCHES \"/CMakeFiles/\" AND NOT FILE MATCHES \"/\\\\.\")" >> CMakeLists.txt
+          echo "        list(APPEND SOURCES \${FILE})" >> CMakeLists.txt
+          echo "    endif()" >> CMakeLists.txt
+          echo "endforeach()" >> CMakeLists.txt
+          echo "message(STATUS \"Final Sources: \${SOURCES}\")" >> CMakeLists.txt
+          echo "add_executable(FH2App \${SOURCES})" >> CMakeLists.txt
+          echo "target_link_libraries(FH2App PRIVATE \"-framework Foundation\" \"-framework UIKit\" \"-framework Metal\" \"-framework MetalKit\" \"-framework QuartzCore\" \"-framework AudioToolbox\")" >> CMakeLists.txt
+          echo "set_target_properties(FH2App PROPERTIES MACOSX_BUNDLE TRUE MACOSX_BUNDLE_GUI_IDENTIFIER \"com.recompiled.fh2\" MACOSX_BUNDLE_BUNDLE_NAME \"FH2 Recompiled\")" >> CMakeLists.txt
           
           cat CMakeLists.txt
 
